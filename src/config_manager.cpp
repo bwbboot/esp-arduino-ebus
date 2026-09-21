@@ -19,6 +19,13 @@ extern ConfigManager configManager;
 namespace {
 
 constexpr const char* nvs_namespace = "esp-ebus";
+constexpr const char* default_admin_password = "ebusebus";
+constexpr const char* secret_placeholder = "********";
+
+bool isSensitiveKey(std::string_view key) {
+  return key == "wifiPassword" || key == "mqttPass" ||
+         key == "apModePassword";
+}
 
 bool ensureNvsReady() {
   static bool nvsReady = false;
@@ -156,15 +163,14 @@ void fillJsonFromNvs(ebus::detail::JsonWriter& writer, nvs_handle_t handle) {
     nvs_entry_info_t info{};
     nvs_entry_info(it, &info);
 
-    // Skip sensitive configuration keys in JSON output to prevent leaking
-    // credentials if (std::strcmp(info.key, "wifiPassword") != 0 &&
-    //     std::strcmp(info.key, "mqttPass") != 0 &&
-    //     std::strcmp(info.key, "apModePassword") != 0) {
-    std::string value;
-    if (readEntryValueAsString(handle, info, value)) {
-      writer.writeField(info.key, value);
+    if (isSensitiveKey(info.key)) {
+      writer.writeField(info.key, secret_placeholder);
+    } else {
+      std::string value;
+      if (readEntryValueAsString(handle, info, value)) {
+        writer.writeField(info.key, value);
+      }
     }
-    // }
 
     if (nvs_entry_next(&it) != ESP_OK) {
       break;
@@ -234,6 +240,24 @@ bool ConfigManager::writeString(const char* key, const std::string& value) {
   const esp_err_t commitErr = nvs_commit(handle);
   nvs_close(handle);
   return commitErr == ESP_OK;
+}
+
+std::string ConfigManager::adminPassword() {
+  if (!ensureNvsReady()) return default_admin_password;
+
+  nvs_handle_t handle = 0;
+  if (nvs_open(nvs_namespace, NVS_READONLY, &handle) != ESP_OK) {
+    return default_admin_password;
+  }
+  char password[64]{};
+  size_t password_size = sizeof(password);
+  const esp_err_t result =
+      nvs_get_str(handle, "apModePassword", password, &password_size);
+  nvs_close(handle);
+  if (result != ESP_OK) return default_admin_password;
+
+  const std::string configured(password);
+  return configured.size() >= 8 ? configured : default_admin_password;
 }
 
 void ConfigManager::resetConfig() {
@@ -326,11 +350,13 @@ bool ConfigManager::writeConfigJson(std::string_view body, std::string& error) {
     if (token == ebus::detail::JsonReader::Token::key) {
       std::string key(reader.value());
       if (reader.next() == ebus::detail::JsonReader::Token::string) {
-        if (!::writeString(handle, key.c_str(), std::string(reader.value()),
-                           error)) {
-          ok = false;
+        const std::string value(reader.value());
+        if (!(isSensitiveKey(key) && value == secret_placeholder)) {
+          if (!::writeString(handle, key.c_str(), value, error)) {
+            ok = false;
+          }
+          dirty = true;
         }
-        dirty = true;
       } else {
         error = "Unsupported value type for key '" + key + "'";
         ok = false;
@@ -339,13 +365,19 @@ bool ConfigManager::writeConfigJson(std::string_view body, std::string& error) {
   }
 
   if (dirty && ok) {
-    nvs_commit(handle);
+    const esp_err_t commit_error = nvs_commit(handle);
+    if (commit_error != ESP_OK) {
+      error = std::string("Failed to commit configuration: ") +
+              esp_err_to_name(commit_error);
+      ok = false;
+    }
   }
   nvs_close(handle);
   return ok;
 }
 
 esp_err_t ConfigManager::handleGet(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req, false)) return ESP_OK;
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   fetchConfig([req](std::string_view chunk) {
@@ -356,6 +388,7 @@ esp_err_t ConfigManager::handleGet(httpd_req_t* req) {
 }
 
 esp_err_t ConfigManager::handleSet(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req)) return ESP_OK;
   HttpUtils::StreamingReader sr(req);
   if (!sr.isValid() || !sr.feedAll()) {
     HttpUtils::sendErrorResponse(req, "400 Bad Request", "config_set",
@@ -375,6 +408,7 @@ esp_err_t ConfigManager::handleSet(httpd_req_t* req) {
 }
 
 esp_err_t ConfigManager::handleReset(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req)) return ESP_OK;
   resetConfig();
   HttpUtils::sendSuccessResponse(req, "config_reset", "successful",
                                  "Config reset");

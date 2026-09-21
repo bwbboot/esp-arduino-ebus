@@ -9,6 +9,7 @@
 #include <mutex>
 #include <utility>
 
+#include "config_manager.hpp"
 #include "logger.hpp"
 
 namespace HttpUtils {
@@ -28,6 +29,27 @@ bool constantTimeEqual(std::string_view left, std::string_view right) {
     difference |= static_cast<unsigned char>(left[i] ^ right[i]);
   }
   return difference == 0;
+}
+
+bool hasValidOrigin(httpd_req_t* req) {
+  const size_t origin_length = httpd_req_get_hdr_value_len(req, "Origin");
+  if (origin_length == 0) return true;
+  const size_t host_length = httpd_req_get_hdr_value_len(req, "Host");
+  if (host_length == 0 || origin_length > 255 || host_length > 127) {
+    return false;
+  }
+
+  std::string origin(origin_length + 1, '\0');
+  std::string host(host_length + 1, '\0');
+  if (httpd_req_get_hdr_value_str(req, "Origin", origin.data(),
+                                  origin.size()) != ESP_OK ||
+      httpd_req_get_hdr_value_str(req, "Host", host.data(), host.size()) !=
+          ESP_OK) {
+    return false;
+  }
+  origin.resize(origin_length);
+  host.resize(host_length);
+  return origin == "http://" + host;
 }
 
 void sendBasicAuthChallenge(httpd_req_t* req) {
@@ -169,6 +191,15 @@ bool requireBasicAuth(httpd_req_t* req, std::string_view username,
     return false;
   }
   return true;
+}
+
+bool requireAdminAuth(httpd_req_t* req, bool verify_origin) {
+  if (verify_origin && !hasValidOrigin(req)) {
+    sendErrorResponse(req, "403 Forbidden", "origin",
+                      "Cross-origin administration request rejected");
+    return false;
+  }
+  return requireBasicAuth(req, "admin", ConfigManager::adminPassword());
 }
 
 void sendResponse(httpd_req_t* req, const char* status, const char* type,

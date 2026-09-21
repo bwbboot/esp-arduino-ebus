@@ -38,6 +38,7 @@ bool registerRoute(httpd_handle_t server, const char* uri,
 // Verifies HTTP Basic credentials and sends a 401 challenge on failure.
 bool requireBasicAuth(httpd_req_t* req, std::string_view username,
                       std::string_view password);
+bool requireAdminAuth(httpd_req_t* req, bool verify_origin = true);
 
 void sendResponse(httpd_req_t* req, const char* status, const char* type,
                   const char* body);

@@ -92,10 +92,8 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   setStatusLedMode(StatusLedMode::SlowBlink);
 
   std::string apPassword = configManager_ != nullptr
-                               ? std::string(configManager_->readString(
-                                     "apModePassword", default_ap_password))
+                               ? configManager_->adminPassword()
                                : std::string(default_ap_password);
-  if (apPassword.empty()) apPassword = default_ap_password;
   const std::string configuredThingName =
       configManager_ != nullptr ? std::string(configManager_->readString(
                                       "thingName", default_hostname))
@@ -192,11 +190,11 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
       configManager_ != nullptr
           ? std::string(configManager_->readString("wifiBssid", ""))
           : std::string("");
-  const bool wifiPowerSave =
+  const bool wifi_power_save =
       configManager_ != nullptr
           ? configManager_->readBool("wifiPowerSave", true)
           : true;
-  const bool wifiFullScan =
+  const bool wifi_full_scan =
       configManager_ != nullptr
           ? configManager_->readBool("wifiFullScan", true)
           : true;
@@ -215,8 +213,10 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   std::strncpy(reinterpret_cast<char*>(staConfig.sta.password), staPass.c_str(),
                sizeof(staConfig.sta.password) - 1);
   staConfig.sta.scan_method =
-      wifiFullScan ? WIFI_ALL_CHANNEL_SCAN : WIFI_FAST_SCAN;
+      wifi_full_scan ? WIFI_ALL_CHANNEL_SCAN : WIFI_FAST_SCAN;
   staConfig.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+  staConfig.sta.threshold.authmode =
+      staPass.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA_PSK;
 
   // Parse and set BSSID if provided (format: xx:xx:xx:xx:xx:xx)
   if (!staBssid.empty()) {
@@ -238,7 +238,7 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
     logger.error("STA config apply failed");
     return;
   }
-  if (esp_wifi_set_ps(wifiPowerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE) !=
+  if (esp_wifi_set_ps(wifi_power_save ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE) !=
       ESP_OK) {
     logger.warn("Failed to configure WiFi power saving");
   }
