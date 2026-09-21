@@ -69,6 +69,8 @@ class BusType {
   ATOMIC_INT nbr_won_2_;
   ATOMIC_INT nbr_errors_;
   ATOMIC_INT nbr_late_;
+  std::atomic<uint32_t> nbr_symbols_;
+  std::atomic<uint32_t> nbr_syn_;
 
  private:
   inline void push(const data& d);

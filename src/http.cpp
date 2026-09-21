@@ -17,6 +17,7 @@
 #include "http_utils.hpp"
 #include "logger.hpp"
 #include "main.hpp"
+#include "pwm_calibration.hpp"
 #include "wifi_network_manager.hpp"
 
 static httpd_handle_t configServer = nullptr;
@@ -123,6 +124,10 @@ void SetupHttpHandlers() {
 
   static AdcApi adc_api(adc);
   adc_api.registerHandlers(configServer);
+
+#if !defined(EBUS_INTERNAL) && defined(PWM_PIN)
+  pwmCalibrationManager.registerHandlers(configServer);
+#endif
 
 #if defined(EBUS_INTERNAL)
   static CommandsApi commands_api(commandManager);

@@ -104,6 +104,8 @@ BusType::BusType()
       nbr_won_2_(0),
       nbr_errors_(0),
       nbr_late_(0),
+      nbr_symbols_(0),
+      nbr_syn_(0),
       client_fd_(-1) {}
 
 BusType::~BusType() { end(); }
@@ -272,6 +274,8 @@ void BusType::push(const data& d) {
 }
 
 void BusType::receive(uint8_t symbol, uint32_t startBitTime) {
+  nbr_symbols_++;
+  if (symbol == SYN) nbr_syn_++;
   bus_state_.data(symbol);
   Arbitration::state state =
       arbitration_.data(bus_state_, symbol, startBitTime);

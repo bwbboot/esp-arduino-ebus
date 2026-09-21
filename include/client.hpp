@@ -7,6 +7,10 @@ bool handleNewClient(int serverFd, int clients[]);
 bool startClientRuntime();
 void stopClientRuntime();
 
+void requestWritableClientIsolation();
+bool writableClientIsolationReady();
+void releaseWritableClientIsolation();
+
 void handleClient(const int* clientFd);
 int pushClient(const int* clientFd, uint8_t byte);
 

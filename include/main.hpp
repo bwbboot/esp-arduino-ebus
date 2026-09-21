@@ -24,5 +24,9 @@ int DEBUG_LOG_IMPL(const char* format, ...);
 // #define DEBUG_LOG DEBUG_LOG_IMPL
 
 void restart();
+void disableTX();
+void enableTX();
+void set_pwm(uint8_t value);
+uint32_t get_pwm();
 void fetchStatus(const ebus::JsonChunkVisitor& visitor);
 void fetchAppStatus(const ebus::JsonChunkVisitor& visitor);
