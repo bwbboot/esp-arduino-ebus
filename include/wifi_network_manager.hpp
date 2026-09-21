@@ -38,6 +38,8 @@ class WifiNetworkManager {
   static int32_t channel();
   static const char* getHostname();
   static std::string_view macAddress();
+  static const char* powerSaveMode();
+  static const char* scanMethod();
   static void setStatusLedPin(int pin);
 
   static void handle_event(void* arg, esp_event_base_t event_base,

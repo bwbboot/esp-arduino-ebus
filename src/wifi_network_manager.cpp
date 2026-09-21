@@ -192,6 +192,14 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
       configManager_ != nullptr
           ? std::string(configManager_->readString("wifiBssid", ""))
           : std::string("");
+  const bool wifiPowerSave =
+      configManager_ != nullptr
+          ? configManager_->readBool("wifiPowerSave", true)
+          : true;
+  const bool wifiFullScan =
+      configManager_ != nullptr
+          ? configManager_->readBool("wifiFullScan", true)
+          : true;
   staConfigured_ = !staSsid.empty();
 
   if (!staConfigured_) {
@@ -206,6 +214,9 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
                sizeof(staConfig.sta.ssid) - 1);
   std::strncpy(reinterpret_cast<char*>(staConfig.sta.password), staPass.c_str(),
                sizeof(staConfig.sta.password) - 1);
+  staConfig.sta.scan_method =
+      wifiFullScan ? WIFI_ALL_CHANNEL_SCAN : WIFI_FAST_SCAN;
+  staConfig.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 
   // Parse and set BSSID if provided (format: xx:xx:xx:xx:xx:xx)
   if (!staBssid.empty()) {
@@ -226,6 +237,10 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   if (esp_wifi_set_config(WIFI_IF_STA, &staConfig) != ESP_OK) {
     logger.error("STA config apply failed");
     return;
+  }
+  if (esp_wifi_set_ps(wifiPowerSave ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE) !=
+      ESP_OK) {
+    logger.warn("Failed to configure WiFi power saving");
   }
   char buf[64];
   snprintf(buf, sizeof(buf), "Connecting STA to SSID: %s", staSsid.c_str());
@@ -348,6 +363,30 @@ std::string_view WifiNetworkManager::macAddress() {
   std::snprintf(buffer, sizeof(buffer), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0],
                 mac[1], mac[2], mac[3], mac[4], mac[5]);
   return buffer;
+}
+
+const char* WifiNetworkManager::powerSaveMode() {
+  wifi_ps_type_t mode = WIFI_PS_NONE;
+  if (esp_wifi_get_ps(&mode) != ESP_OK) return "unavailable";
+  switch (mode) {
+    case WIFI_PS_NONE:
+      return "disabled";
+    case WIFI_PS_MIN_MODEM:
+      return "minimum_modem";
+    case WIFI_PS_MAX_MODEM:
+      return "maximum_modem";
+    default:
+      return "unknown";
+  }
+}
+
+const char* WifiNetworkManager::scanMethod() {
+  wifi_config_t config{};
+  if (esp_wifi_get_config(WIFI_IF_STA, &config) != ESP_OK) {
+    return "unavailable";
+  }
+  return config.sta.scan_method == WIFI_ALL_CHANNEL_SCAN ? "all_channels"
+                                                          : "fast";
 }
 
 void WifiNetworkManager::statusLedTaskEntry(void* arg) {

@@ -177,6 +177,8 @@ struct WifiStatus {
     writer.writeField("ssid", WifiNetworkManager::SSID());
     writer.writeField("bssid", WifiNetworkManager::BSSIDstr());
     writer.writeField("channel", WifiNetworkManager::channel());
+    writer.writeField("power_save", WifiNetworkManager::powerSaveMode());
+    writer.writeField("scan_method", WifiNetworkManager::scanMethod());
     writer.writeField("hostname", WifiNetworkManager::getHostname());
     writer.writeField("mac_address", WifiNetworkManager::macAddress());
   }
