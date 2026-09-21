@@ -15,6 +15,7 @@ class ConfigManager {
   static bool readBool(const char* key, bool fallback = false);
   static bool writeString(const char* key, const std::string& value);
   static std::string adminPassword();
+  static bool migrateLegacyConfig();
 
   static esp_err_t handleGet(httpd_req_t* req);
   static esp_err_t handleSet(httpd_req_t* req);

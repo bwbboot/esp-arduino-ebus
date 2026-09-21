@@ -107,6 +107,19 @@ interface on a trusted network and do not expose it directly to the internet.
 Cross-origin administration requests are rejected when an `Origin` header is
 present.
 
+### Upgrading older installations
+
+On the first boot after an application-only upgrade from the earlier
+IotWebConf-based firmware, the adapter imports its device name, administrator
+password, Wi-Fi credentials and PWM value before starting Wi-Fi. Existing
+values in the current configuration always take precedence. The legacy data is
+kept for firmware rollback, while a separate marker prevents it from being
+imported again after a configuration reset.
+
+Only upload the regular firmware image through the web interface. A full-flash
+image also replaces the partition table and is intended for a serial recovery
+or installation procedure.
+
 ## Wi-Fi connection policy
 
 The configuration page provides two Wi-Fi behavior options:

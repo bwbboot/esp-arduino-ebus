@@ -591,6 +591,10 @@ extern "C" void app_main(void) {
   initPwm();
 #endif
 
+  if (!configManager.migrateLegacyConfig()) {
+    logger.warn("Legacy configuration migration could not be completed");
+  }
+
   WifiNetworkManager::begin(&configManager);
   startCaptiveDns();
   SetupHttpHandlers();
