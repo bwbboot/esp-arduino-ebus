@@ -1,6 +1,7 @@
 #include "http_utils.hpp"
 
 #include <esp_err.h>
+#include <mbedtls/base64.h>
 
 #include <cstring>
 #include <ebus/detail/json_reader.hpp>
@@ -19,6 +20,24 @@ char streaming_buffer[streaming_buffer_size];
 ebus::detail::JsonReader streaming_reader(streaming_buffer,
                                           sizeof(streaming_buffer));
 std::mutex streaming_mutex;
+
+bool constantTimeEqual(std::string_view left, std::string_view right) {
+  if (left.size() != right.size()) return false;
+  unsigned char difference = 0;
+  for (size_t i = 0; i < left.size(); ++i) {
+    difference |= static_cast<unsigned char>(left[i] ^ right[i]);
+  }
+  return difference == 0;
+}
+
+void sendBasicAuthChallenge(httpd_req_t* req) {
+  httpd_resp_set_status(req, "401 Unauthorized");
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_set_hdr(req, "WWW-Authenticate",
+                     "Basic realm=\"esp-ebus administration\"");
+  applyCustomHeaders(req);
+  httpd_resp_send(req, "Authentication required", HTTPD_RESP_USE_STRLEN);
+}
 }  // namespace
 
 StreamingReader::StreamingReader(httpd_req_t* req) : req_(req) {
@@ -106,6 +125,50 @@ bool registerRoute(httpd_handle_t server, const char* uri,
   route.method = method;
   route.handler = handler;
   return registerRoute(server, route);
+}
+
+bool requireBasicAuth(httpd_req_t* req, std::string_view username,
+                      std::string_view password) {
+  const size_t headerLength = httpd_req_get_hdr_value_len(req, "Authorization");
+  if (headerLength == 0 || headerLength > 512) {
+    sendBasicAuthChallenge(req);
+    return false;
+  }
+
+  std::string authorization(headerLength + 1, '\0');
+  if (httpd_req_get_hdr_value_str(req, "Authorization",
+                                  authorization.data(),
+                                  authorization.size()) != ESP_OK) {
+    sendBasicAuthChallenge(req);
+    return false;
+  }
+  authorization.resize(headerLength);
+
+  std::string credentials;
+  credentials.reserve(username.size() + password.size() + 1);
+  credentials.append(username);
+  credentials.push_back(':');
+  credentials.append(password);
+
+  const size_t encodedCapacity = ((credentials.size() + 2) / 3) * 4 + 1;
+  size_t encodedLength = 0;
+  std::string expected(encodedCapacity, '\0');
+  if (mbedtls_base64_encode(
+          reinterpret_cast<unsigned char*>(expected.data()), expected.size(),
+          &encodedLength,
+          reinterpret_cast<const unsigned char*>(credentials.data()),
+          credentials.size()) != 0) {
+    sendBasicAuthChallenge(req);
+    return false;
+  }
+  expected.resize(encodedLength);
+  expected.insert(0, "Basic ");
+
+  if (!constantTimeEqual(authorization, expected)) {
+    sendBasicAuthChallenge(req);
+    return false;
+  }
+  return true;
 }
 
 void sendResponse(httpd_req_t* req, const char* status, const char* type,

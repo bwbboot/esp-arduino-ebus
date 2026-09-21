@@ -13,6 +13,7 @@
 #include "api/status_api.hpp"
 #include "api/values_api.hpp"
 #include "command_manager.hpp"
+#include "config_manager.hpp"
 #include "http_utils.hpp"
 #include "logger.hpp"
 #include "main.hpp"
@@ -55,7 +56,12 @@ esp_err_t handleUpgradePage(httpd_req_t* req) {
 }
 
 esp_err_t handleRestart(httpd_req_t* req) {
-  HttpUtils::sendResponse(req, "200 OK", "text/html", "Restarting...");
+  const std::string password(
+      configManager.readString("apModePassword", "ebusebus"));
+  if (!HttpUtils::requireBasicAuth(req, "admin", password)) return ESP_OK;
+
+  HttpUtils::sendResponse(req, "202 Accepted", "text/plain",
+                          "Restarting adapter\n");
   vTaskDelay(pdMS_TO_TICKS(500));
   restart();
   return ESP_OK;
@@ -141,7 +147,7 @@ void SetupHttpHandlers() {
 
 #endif
 
-  RegisterUri("/restart", HTTP_GET, handleRestart);
+  RegisterUri("/restart", HTTP_POST, handleRestart);
 }  // namespace
 
 void SetupHttpFallbackHandlers() {
