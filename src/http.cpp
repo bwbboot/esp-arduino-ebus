@@ -52,6 +52,7 @@ esp_err_t handleRoot(httpd_req_t* req) {
 }
 
 esp_err_t handleUpgradePage(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req)) return ESP_OK;
   HttpUtils::sendResponse(req, "200 OK", "text/html", upgrade_html_start);
   return ESP_OK;
 }
@@ -93,8 +94,8 @@ bool RegisterUri(const char* uri, httpd_method_t method,
   return HttpUtils::registerRoute(configServer, uri, method, handler);
 }
 
-void SetupHttpHandlers() {
-  if (configServer != nullptr) return;
+bool SetupHttpHandlers() {
+  if (configServer != nullptr) return true;
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
@@ -108,7 +109,7 @@ void SetupHttpHandlers() {
 
   if (httpd_start(&configServer, &config) != ESP_OK) {
     logger.error("Failed to start HTTP server");
-    return;
+    return false;
   }
 
   RegisterUri("/common.css", HTTP_GET, handleCommonCss);
@@ -151,7 +152,10 @@ void SetupHttpHandlers() {
 #endif
 
   RegisterUri("/restart", HTTP_POST, handleRestart);
+  return true;
 }  // namespace
+
+bool IsHttpServerRunning() { return configServer != nullptr; }
 
 void SetupHttpFallbackHandlers() {
   if (configServer == nullptr || fallbackHandlersRegistered) return;

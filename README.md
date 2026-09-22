@@ -120,6 +120,20 @@ Only upload the regular firmware image through the web interface. A full-flash
 image also replaces the partition table and is intended for a serial recovery
 or installation procedure.
 
+When the installed bootloader supports OTA rollback, a pending image is
+confirmed only after the HTTP recovery service, a reachable Wi-Fi interface
+and the selected eBUS runtime have started. `sdkconfig.defaults` enables this
+protection for new full-flash installations. An application-only upgrade does
+not replace an older bootloader, so installations created without rollback
+support need one serial full-flash installation before they gain this safety
+net.
+
+The upgrade page, file uploads and URL-based upgrades require administrator
+authentication. The normal firmware profiles do not open the Arduino ESPOTA
+port. The `*-ota` build profiles enable ESPOTA for development compatibility;
+that legacy protocol has no administrator authentication and must only be used
+on a trusted, isolated network.
+
 ## Wi-Fi connection policy
 
 The configuration page provides two Wi-Fi behavior options:
@@ -137,6 +151,12 @@ from automatic selection.
 
 The status API reports the active power-saving mode, scan method, channel,
 RSSI, SSID and selected BSSID.
+
+Wi-Fi and IP events are handled by their event family as well as their numeric
+event identifier. This prevents an unrelated Wi-Fi event with the same numeric
+value from being mistaken for a successful DHCP assignment. Configured devices
+start in station-only mode; after repeated connection failures they enable the
+recovery access point without taking down the station interface again.
 
 ## Assisted PWM calibration
 

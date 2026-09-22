@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include "app_limits.hpp"
@@ -43,6 +44,31 @@ esp_netif_t* WifiNetworkManager::staNetif_ = nullptr;
 esp_netif_t* WifiNetworkManager::apNetif_ = nullptr;
 
 namespace {
+
+uint8_t consecutiveDisconnects = 0;
+esp_timer_handle_t reconnectTimer = nullptr;
+bool recoveryApConfigured = false;
+
+void scheduleReconnect(uint64_t delayUs);
+
+void reconnectTimerCallback(void*) {
+  const esp_err_t result = esp_wifi_connect();
+  if (result != ESP_OK) {
+    logger.warn(std::string("STA reconnect failed: ") +
+                esp_err_to_name(result));
+    scheduleReconnect(5000000);
+  }
+}
+
+void scheduleReconnect(uint64_t delayUs) {
+  if (reconnectTimer == nullptr) return;
+  esp_timer_stop(reconnectTimer);
+  const esp_err_t result = esp_timer_start_once(reconnectTimer, delayUs);
+  if (result != ESP_OK) {
+    logger.warn(std::string("Failed to schedule STA reconnect: ") +
+                esp_err_to_name(result));
+  }
+}
 
 std::string trimCopy(const std::string& value) {
   const auto start = value.find_first_not_of(" \t\r\n");
@@ -79,12 +105,12 @@ std::string buildHostname(const std::string& source, const char* fallback) {
 
 }  // namespace
 
-void WifiNetworkManager::begin(ConfigManager* configManager) {
+bool WifiNetworkManager::begin(ConfigManager* configManager) {
   static constexpr const char* default_hostname = "esp-eBus";
   static constexpr const char* default_ap_ssid = "esp-eBus";
   static constexpr const char* default_ap_password = "ebusebus";
   static bool started = false;
-  if (started) return;
+  if (started) return getMode() != WIFI_MODE_NULL;
   started = true;
 
   configManager_ = configManager;
@@ -104,12 +130,12 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   esp_err_t err = esp_netif_init();
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     logger.error("esp_netif_init failed");
-    return;
+    return false;
   }
   err = esp_event_loop_create_default();
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     logger.error("esp_event_loop_create_default failed");
-    return;
+    return false;
   }
 
   if (staNetif_ == nullptr) {
@@ -122,7 +148,7 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   if (esp_wifi_init(&cfg) != ESP_OK) {
     logger.error("esp_wifi_init failed");
-    return;
+    return false;
   }
 
   esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
@@ -138,12 +164,25 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
 
   if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK) {
     logger.error("Failed to set WiFi mode");
-    return;
+    return false;
   }
 
   if (esp_wifi_start() != ESP_OK) {
     logger.error("Failed to start WiFi");
-    return;
+    return false;
+  }
+
+  if (reconnectTimer == nullptr) {
+    const esp_timer_create_args_t reconnectTimerArgs = {
+        .callback = reconnectTimerCallback,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "wifi_reconnect",
+        .skip_unhandled_events = true,
+    };
+    if (esp_timer_create(&reconnectTimerArgs, &reconnectTimer) != ESP_OK) {
+      logger.warn("Failed to create STA reconnect timer");
+    }
   }
 
   // Initialize mDNS
@@ -172,6 +211,7 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
   if (esp_wifi_set_config(WIFI_IF_AP, &apConfig) != ESP_OK) {
     logger.error("AP config apply failed");
   } else {
+    recoveryApConfigured = true;
     char buf[64];
     snprintf(buf, sizeof(buf), "AP ready: %s (%s)", default_ap_ssid,
              (apConfig.ap.authmode == WIFI_AUTH_OPEN ? "open" : "wpa2"));
@@ -202,7 +242,7 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
 
   if (!staConfigured_) {
     logger.warn("STA credentials missing, AP-only mode");
-    return;
+    return true;
   }
 
   configureStaticIpIfEnabled();
@@ -236,17 +276,30 @@ void WifiNetworkManager::begin(ConfigManager* configManager) {
 
   if (esp_wifi_set_config(WIFI_IF_STA, &staConfig) != ESP_OK) {
     logger.error("STA config apply failed");
-    return;
+    return false;
   }
   if (esp_wifi_set_ps(wifi_power_save ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE) !=
       ESP_OK) {
     logger.warn("Failed to configure WiFi power saving");
   }
+  // Start configured installations in station-only mode. Keeping the AP radio
+  // active during the initial all-channel scan can constrain the scan to the
+  // temporary AP channel on some ESP32-C3/IDF combinations. The disconnect
+  // handler restores AP+STA after repeated failures as a recovery path.
+  if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) {
+    logger.warn("Failed to switch WiFi to station mode");
+  }
   char buf[64];
   snprintf(buf, sizeof(buf), "Connecting STA to SSID: %s", staSsid.c_str());
   logger.info(buf);
   setStatusLedMode(StatusLedMode::SlowBlink);
-  esp_wifi_connect();
+  const esp_err_t connectResult = esp_wifi_connect();
+  if (connectResult != ESP_OK) {
+    logger.warn(std::string("Initial STA connect failed: ") +
+                esp_err_to_name(connectResult));
+    scheduleReconnect(1000000);
+  }
+  return true;
 }
 
 uint32_t WifiNetworkManager::getLastConnect() { return lastConnect_; }
@@ -254,6 +307,28 @@ uint32_t WifiNetworkManager::getLastConnect() { return lastConnect_; }
 int WifiNetworkManager::getReconnectCount() { return reconnectCount_; }
 
 bool WifiNetworkManager::isStaConnected() { return staConnected_; }
+
+bool WifiNetworkManager::isRecoveryAccessPointReady() {
+  const wifi_mode_t mode = getMode();
+  return recoveryApConfigured &&
+         (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA);
+}
+
+bool WifiNetworkManager::ensureRecoveryAccessPoint() {
+  if (!recoveryApConfigured) {
+    logger.error("Recovery AP configuration is unavailable");
+    return false;
+  }
+  if (isRecoveryAccessPointReady()) return true;
+  const esp_err_t result = esp_wifi_set_mode(WIFI_MODE_APSTA);
+  if (result != ESP_OK) {
+    logger.error(std::string("Failed to enable recovery AP: ") +
+                 esp_err_to_name(result));
+    return false;
+  }
+  logger.warn("Recovery AP enabled");
+  return true;
+}
 
 std::string_view WifiNetworkManager::getIpAddress() {
   if (ipAddress_.addr != 0) return ipToString(ipAddress_);
@@ -479,9 +554,10 @@ void WifiNetworkManager::handle_event(
     void* arg, esp_event_base_t event_base, int32_t event_id,
     void* event_data) {  // cppcheck-suppress constParameterCallback
   (void)arg;
-  (void)event_base;
 
-  if (event_id == IP_EVENT_STA_GOT_IP) {
+  if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+    consecutiveDisconnects = 0;
+    if (reconnectTimer != nullptr) esp_timer_stop(reconnectTimer);
     if (event_data != nullptr) {
       const auto* gotIpEvent =
           static_cast<const ip_event_got_ip_t*>(event_data);
@@ -502,24 +578,27 @@ void WifiNetworkManager::handle_event(
     lastConnect_ = (uint32_t)(esp_timer_get_time() / 1000ULL);
     ++reconnectCount_;
 
-    if (getMode() != WIFI_MODE_STA) {
-      if (esp_wifi_set_mode(WIFI_MODE_STA) == ESP_OK) {
-        logger.info("Switched WiFi mode to STA only");
-      } else {
-        logger.warn("Failed to switch WiFi mode to STA only");
-      }
-    }
-  } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
+  } else if (event_base == WIFI_EVENT &&
+             event_id == WIFI_EVENT_STA_DISCONNECTED) {
     staConnected_ = false;
     setStatusLedMode(StatusLedMode::SlowBlink);
     logger.warn("STA disconnected, reconnecting");
 
-    if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK) {
-      logger.error("Failed to set WiFi mode");
-      return;
+    if (consecutiveDisconnects < std::numeric_limits<uint8_t>::max()) {
+      ++consecutiveDisconnects;
+    }
+    if (consecutiveDisconnects >= 3 && getMode() == WIFI_MODE_STA) {
+      ensureRecoveryAccessPoint();
     }
 
-    if (staConfigured_) esp_wifi_connect();
+    if (staConfigured_) {
+      const uint64_t delayUs =
+          consecutiveDisconnects < 3
+              ? 1000000ULL
+              : std::min<uint64_t>(30000000ULL,
+                                   5000000ULL * (consecutiveDisconnects - 2));
+      scheduleReconnect(delayUs);
+    }
   }
 }
 

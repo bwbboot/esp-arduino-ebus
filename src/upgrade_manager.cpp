@@ -36,18 +36,28 @@ esp_err_t handleUpgradeStatus(httpd_req_t* req) {
 }
 
 esp_err_t handleUpgradeHttp(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req)) return ESP_OK;
   return upgradeManager.handleHttpUpgrade(req);
 }
 
 esp_err_t handleUpgradeUpload(httpd_req_t* req) {
+  if (!HttpUtils::requireAdminAuth(req)) return ESP_OK;
   return upgradeManager.handleUpload(req);
 }
 }  // namespace
 
-void UpgradeManager::begin() {
-  RegisterUri("/api/v1/upgrade/status", HTTP_GET, handleUpgradeStatus);
-  RegisterUri("/api/v1/upgrade/http", HTTP_POST, handleUpgradeHttp);
-  RegisterUri("/api/v1/upgrade/upload", HTTP_POST, handleUpgradeUpload);
+bool UpgradeManager::begin() {
+  bool registered = true;
+  registered = RegisterUri("/api/v1/upgrade/status", HTTP_GET,
+                           handleUpgradeStatus) &&
+               registered;
+  registered = RegisterUri("/api/v1/upgrade/http", HTTP_POST,
+                           handleUpgradeHttp) &&
+               registered;
+  registered = RegisterUri("/api/v1/upgrade/upload", HTTP_POST,
+                           handleUpgradeUpload) &&
+               registered;
+  return registered;
 }
 
 void UpgradeManager::setPreUpgradeHook(PreUpgradeHook hook) {
