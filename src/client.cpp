@@ -140,7 +140,10 @@ void dataLoop(void* arg) {
       writable_client_isolation_acknowledged.store(true);
     }
     dataProcess(!isolation_requested);
-    if (isolation_requested) vTaskDelay(1);
+    // dataProcess() only performs non-blocking I/O. Always block briefly so the
+    // CPU0 idle task can run and service the task watchdog, including while a
+    // bridge client continuously exchanges data.
+    vTaskDelay(1);
   }
 }
 
