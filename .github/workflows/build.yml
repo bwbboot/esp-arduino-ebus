@@ -51,6 +51,8 @@ jobs:
         /tmp/bridge_wifi_tests
         c++ -std=c++17 -Wall -Wextra -Werror -DEBUS_INTERNAL=1 -Iinclude test_host/bridge_wifi_tests.cpp -o /tmp/internal_wifi_tests
         /tmp/internal_wifi_tests
+        c++ -std=c++17 -Wall -Wextra -Werror -Itest_host/bridge_mocks -Iinclude test_host/bridge_socket_tests.cpp -o /tmp/bridge_socket_tests
+        /tmp/bridge_socket_tests
     - name: Prepare release dir
       run: mkdir release
     - name: Build v5.x

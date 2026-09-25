@@ -189,6 +189,14 @@ The internal variant keeps its existing buffer settings. This policy needs
 on-device testing with simultaneous clients; a successful build alone does
 not establish network stability.
 
+Bridge socket input uses nonblocking reads and peeks, not the optional lwIP
+`FIONREAD` ioctl. Enhanced commands are decoded as a TCP byte stream: a split
+two-byte command is retained per connection until complete, without executing
+a partial command or blocking other clients. Host socket tests cover all
+command/data combinations, split and combined packets, malformed commands,
+disconnects and independent client state. Active bus operation still requires
+on-device validation; successful passive reception alone does not test sending.
+
 ## Assisted PWM calibration
 
 Assisted calibration is available in network-bridge firmware builds. The PWM
