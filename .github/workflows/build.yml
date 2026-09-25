@@ -47,6 +47,10 @@ jobs:
         /tmp/bridge_arbitration_tests
         c++ -std=c++17 -Wall -Wextra -Werror -Itest_host/bridge_mocks -Iinclude test_host/bridge_uart_tests.cpp src/uart_port.cpp -o /tmp/bridge_uart_tests
         /tmp/bridge_uart_tests
+        c++ -std=c++17 -Wall -Wextra -Werror -Iinclude test_host/bridge_wifi_tests.cpp -o /tmp/bridge_wifi_tests
+        /tmp/bridge_wifi_tests
+        c++ -std=c++17 -Wall -Wextra -Werror -DEBUS_INTERNAL=1 -Iinclude test_host/bridge_wifi_tests.cpp -o /tmp/internal_wifi_tests
+        /tmp/internal_wifi_tests
     - name: Prepare release dir
       run: mkdir release
     - name: Build v5.x

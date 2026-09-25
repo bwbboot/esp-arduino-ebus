@@ -180,6 +180,15 @@ not replace electrical timing measurements or representative active reads on
 the actual adapter. Confirm those before treating a new bridge image as
 validated for deployment.
 
+Bridge builds also reserve normal ESP-IDF Wi-Fi buffer capacity at startup:
+at least 10 static RX, 32 dynamic RX and 16 static TX buffers, with a receive
+Block Ack window of at least 6. This avoids inheriting the internal variant's
+reduced memory budget while serving continuous TCP streams and web requests.
+Larger custom limits, unlimited dynamic RX and dynamic TX mode are preserved.
+The internal variant keeps its existing buffer settings. This policy needs
+on-device testing with simultaneous clients; a successful build alone does
+not establish network stability.
+
 ## Assisted PWM calibration
 
 Assisted calibration is available in network-bridge firmware builds. The PWM
