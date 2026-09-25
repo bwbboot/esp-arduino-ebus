@@ -1,4 +1,5 @@
 #include "config_manager.hpp"
+#include "web_admin_policy.hpp"
 
 #include <esp_err.h>
 #include <nvs.h>
@@ -20,12 +21,8 @@ namespace {
 
 constexpr const char* nvs_namespace = "esp-ebus";
 constexpr const char* default_admin_password = "ebusebus";
-constexpr const char* secret_placeholder = "********";
+constexpr auto secret_placeholder = web_admin::secret_placeholder;
 
-bool isSensitiveKey(std::string_view key) {
-  return key == "wifiPassword" || key == "mqttPass" ||
-         key == "apModePassword";
-}
 
 bool ensureNvsReady() {
   static bool nvsReady = false;
@@ -163,7 +160,7 @@ void fillJsonFromNvs(ebus::detail::JsonWriter& writer, nvs_handle_t handle) {
     nvs_entry_info_t info{};
     nvs_entry_info(it, &info);
 
-    if (isSensitiveKey(info.key)) {
+    if (web_admin::isSensitiveKey(info.key)) {
       writer.writeField(info.key, secret_placeholder);
     } else {
       std::string value;
@@ -351,7 +348,7 @@ bool ConfigManager::writeConfigJson(std::string_view body, std::string& error) {
       std::string key(reader.value());
       if (reader.next() == ebus::detail::JsonReader::Token::string) {
         const std::string value(reader.value());
-        if (!(isSensitiveKey(key) && value == secret_placeholder)) {
+        if (!web_admin::preserveSecret(key, value)) {
           if (!::writeString(handle, key.c_str(), value, error)) {
             ok = false;
           }
