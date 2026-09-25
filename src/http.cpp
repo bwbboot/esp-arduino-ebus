@@ -88,8 +88,8 @@ bool RegisterUri(const char* uri, httpd_method_t method,
   return HttpUtils::registerRoute(configServer, uri, method, handler);
 }
 
-void SetupHttpHandlers() {
-  if (configServer != nullptr) return;
+bool SetupHttpHandlers() {
+  if (configServer != nullptr) return true;
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
@@ -103,7 +103,7 @@ void SetupHttpHandlers() {
 
   if (httpd_start(&configServer, &config) != ESP_OK) {
     logger.error("Failed to start HTTP server");
-    return;
+    return false;
   }
 
   RegisterUri("/common.css", HTTP_GET, handleCommonCss);
@@ -142,7 +142,10 @@ void SetupHttpHandlers() {
 #endif
 
   RegisterUri("/restart", HTTP_GET, handleRestart);
+  return true;
 }  // namespace
+
+bool IsHttpServerRunning() { return configServer != nullptr; }
 
 void SetupHttpFallbackHandlers() {
   if (configServer == nullptr || fallbackHandlersRegistered) return;

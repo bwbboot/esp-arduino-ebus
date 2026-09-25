@@ -12,7 +12,7 @@ class UpgradeManager {
  public:
   using PreUpgradeHook = std::function<void(void)>;
 
-  static void begin();
+  static bool begin();
   void setPreUpgradeHook(PreUpgradeHook hook);
 
   esp_err_t handleUpload(httpd_req_t* req);

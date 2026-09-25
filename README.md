@@ -102,3 +102,20 @@ Hardware verification must cover successful STA boot, a missing configured AP,
 recovery AP reachability and STA restoration. The combined candidate was tested
 for continuous reachability after OTA and restart; not every failure scenario
 has been exercised on every supported board.
+
+
+## Pending-image health checks (dependent follow-up)
+
+This follow-up uses the Wi-Fi recovery APIs from the Wi-Fi recovery change.
+A pending OTA image is confirmed only after HTTP startup, upload-route
+registration, the selected runtime and STA/recovery-AP reachability succeed.
+Failure requests bootloader rollback. It does not authenticate endpoints by
+itself; the separate web-administration security change is also required before
+using this as an operator-facing update feature.
+
+Rollback requires an already compatible bootloader. An application-only update
+cannot replace the installed bootloader or partition table. Do not infer rollback
+protection merely from an application build flag. Old layouts may not fit the
+internal variant. Normal authenticated OTA/restart was tested in the combined
+candidate, but bootloader-driven rollback has not been tested on every supported
+layout. This follow-up must remain under review until prerequisites are merged.

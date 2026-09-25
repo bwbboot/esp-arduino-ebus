@@ -7,6 +7,7 @@
 #include <esp_heap_caps.h>
 #include <esp_idf_version.h>
 #include <esp_mac.h>
+#include <esp_ota_ops.h>
 #include <esp_private/esp_clk.h>
 #include <esp_system.h>
 #include <esp_timer.h>
@@ -63,6 +64,19 @@ EspOtaManager espOtaManager;
 char unique_id[7]{};
 
 namespace {
+
+enum class OtaImageState { NotPending, Pending, QueryError };
+
+OtaImageState getOtaImageState() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (running == nullptr) return OtaImageState::QueryError;
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  if (esp_ota_get_state_partition(running, &state) != ESP_OK) {
+    return OtaImageState::QueryError;
+  }
+  return state == ESP_OTA_IMG_PENDING_VERIFY ? OtaImageState::Pending
+                                             : OtaImageState::NotPending;
+}
 
 // status
 uint32_t reset_code = 0;
@@ -521,6 +535,7 @@ void fetchStatus(const ebus::JsonChunkVisitor& visitor) {
 }
 
 extern "C" void app_main(void) {
+  bool runtimeHealthy = true;
   DebugSer.begin(115200);
   DebugSer.setDebugOutput(true);
 
@@ -574,13 +589,13 @@ extern "C" void app_main(void) {
   initPwm();
 #endif
 
-  WifiNetworkManager::begin(&configManager);
+  const bool wifiStarted = WifiNetworkManager::begin(&configManager);
   startCaptiveDns();
-  SetupHttpHandlers();
+  const bool httpStarted = SetupHttpHandlers();
   configManager.begin();
   HttpUtils::setCustomHeaders(
       std::string(configManager.readString("httpHeaders", "")));
-  upgradeManager.begin();
+  const bool upgradeRecoveryStarted = upgradeManager.begin();
   SetupHttpFallbackHandlers();
   upgradeManager.setPreUpgradeHook(prepareRuntimeForUpgrade);
   espOtaManager.setPreUpgradeHook(prepareRuntimeForUpgrade);
@@ -735,6 +750,7 @@ extern "C" void app_main(void) {
   // CRITICAL: Ensure configuration is applied or we will crash
   if (!getEbusController().configure(getEbusConfig())) {
     logger.error("eBUS: Global Configuration failed! Simulation may crash.");
+    runtimeHealthy = false;
   }
 
   // Optimized callbacks: Avoid heap-heavy JSON work inside library threads
@@ -825,6 +841,7 @@ extern "C" void app_main(void) {
 
   if (!commandManager.initFileSystem()) {
     logger.error("LittleFS initialization failed");
+    runtimeHealthy = false;
   }
 
 #if defined(EBUS_INTERNAL)
@@ -844,7 +861,39 @@ extern "C" void app_main(void) {
 #else
   if (!startClientRuntime()) {
     logger.error("Failed to start client runtime");
+    runtimeHealthy = false;
   }
 #endif
+  const OtaImageState otaState = getOtaImageState();
+  if (otaState == OtaImageState::QueryError) {
+    logger.warn("OTA image state is unavailable; no confirmation attempted");
+  } else if (otaState == OtaImageState::Pending) {
+    constexpr uint32_t healthWaitMs = 30000;
+    constexpr uint32_t healthPollMs = 250;
+    bool networkReachable = false;
+    for (uint32_t waited = 0; waited < healthWaitMs; waited += healthPollMs) {
+      networkReachable = WifiNetworkManager::isStaConnected() ||
+                         WifiNetworkManager::isRecoveryAccessPointReady();
+      if (networkReachable) break;
+      vTaskDelay(pdMS_TO_TICKS(healthPollMs));
+    }
+    if (!networkReachable) {
+      networkReachable = WifiNetworkManager::ensureRecoveryAccessPoint();
+    }
+
+    if (wifiStarted && httpStarted && upgradeRecoveryStarted &&
+        IsHttpServerRunning() && runtimeHealthy && networkReachable) {
+      const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
+      if (result == ESP_OK) {
+        logger.info("Pending OTA image confirmed after health checks");
+      } else {
+        logger.error(std::string("Unable to confirm pending OTA image: ") +
+                     esp_err_to_name(result));
+      }
+    } else {
+      logger.error("OTA health checks failed; rolling back pending image");
+      esp_ota_mark_app_invalid_rollback_and_reboot();
+    }
+  }
   vTaskDelete(nullptr);
 }
