@@ -92,7 +92,7 @@ reimport after a deliberate configuration reset. Invalid or truncated records
 are rejected, and the marker is written only after successful migration.
 
 Upload a regular application image, not a full-flash image. Check the installed
-OTA slot size first: legacy layouts may have only0x140000 bytes per application.
+OTA slot size first: legacy layouts may have only 0x140000 bytes per application.
 The bridge build is size-optimized and CI checks that limit. The larger internal
 variant must not be assumed to fit the same layout. Application-only OTA leaves
 the existing bootloader and partition table in place and does not enable new
