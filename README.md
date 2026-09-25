@@ -131,4 +131,71 @@ connected devices and electrical conditions.
 Calibration is always started explicitly by an operator. It never adjusts PWM
 continuously during normal operation.
 
-#
+### Observe
+
+**Observe current PWM** monitors the signal at the current value for 30 seconds.
+It does not change or persist PWM. Writable eBUS clients are temporarily
+disconnected so the observation remains passive; read-only monitoring remains
+available.
+
+### Calibrate
+
+**Start passive calibration** evaluates the supported PWM range:
+
+1. Writable clients are isolated and new writable connections are rejected.
+2. Transmission is disabled where the adapter hardware provides a TX-disable
+   control.
+3. Odd PWM values from 1 through 255 are allowed to settle and then measured.
+4. Receiver stability is estimated from symbol flow, recurring SYN symbols,
+   input transitions and both logic levels. At least three adjacent candidates
+   must pass.
+5. A tested value near the midpoint of the widest continuous stable range is
+   measured once more and then applied temporarily.
+6. Writable access resumes so the candidate can be validated with
+   representative active reads under normal traffic.
+
+A complete sweep takes approximately five minutes. Applications using writable
+eBUS access may report missing data during that period.
+
+### Validate, accept or roll back
+
+Test representative reads after the sweep. Use **Accept validated candidate**
+to persist a satisfactory result. Use **Restore original PWM** to immediately
+restore and persist the value that was active before calibration.
+
+The temporary candidate is restored automatically when no SYN activity is
+detected for five seconds or when it is not accepted within ten minutes. The
+original value is also restored if no stable range is found or the selected
+candidate fails its confirmation measurement.
+
+PWM calibration can improve the receive threshold, but it cannot correct every
+wiring, power, topology, timing or protocol problem. A value found on one
+installation must not be assumed to be suitable for another. The passive
+heuristic does not validate CRCs, responses or application-level reads, so an
+operator must validate representative active reads before accepting a result.
+
+### Calibration status
+
+`GET /api/v1/status` includes the `pwm_calibration` object with:
+
+- state, original value, current candidate and selected value;
+- stable range boundaries;
+- symbol, SYN and input-transition counts plus the arbitration-error snapshot;
+- the stability result for the latest measurement.
+
+Possible states include `unavailable`, `idle`, `preparing_observation`,
+`observation_settling`, `observing`, `observed`, `preparing_sweep`, `settling`,
+`measuring`, `confirmation_settling`, `confirmation_measuring`,
+`awaiting_validation`, `accepted`, `rolled_back` and `failed`. A
+`persistence_error` flag reports a failed attempt to save a result.
+
+### Maintenance endpoints
+
+| Endpoint | Method | Authentication | Purpose |
+| --- | --- | --- | --- |
+| `/api/v1/status` | GET | No | Adapter and calibration status |
+| `/restart` | POST | Admin | Controlled software restart |
+| `/api/v1/pwm-calibration/observe` | POST | Admin | Observe the current PWM |
+| `/api/v1/pwm-calibration/start` | POST | Admin | Start a passive PWM sweep |
+| `/api/v1/pwm-calibration/accept` | POST | Admin | Persist the temporary candidate |
+| `/api/v1/pwm-calibration/rollback` | POST | Admin | Restore the original value |
