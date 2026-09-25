@@ -82,3 +82,23 @@ This mode enables **standalone operation** without requiring external software s
 - 🧩 Compatible with existing eBUS tools and ecosystems
 
 ---
+
+## Wi-Fi policy and recovery
+
+The configuration page exposes `wifiPowerSave` and `wifiFullScan` (both default
+true). Power saving may increase bridge latency; disable it when testing a
+latency-sensitive installation. Full scan considers all channels and sorts by
+signal strength; a configured BSSID still pins selection. The status API reports
+the effective power-save and scan policies.
+
+A configured adapter starts in STA mode. Repeated disconnects use bounded
+reconnect backoff and enable a persistent recovery access point. The fallback
+stays available after STA reconnects until a restart. Wi-Fi and IP events are
+handled in their own event families, preventing overlapping numeric IDs from
+being interpreted as the wrong event. This does not change station credentials
+or automatically tune PWM.
+
+Hardware verification must cover successful STA boot, a missing configured AP,
+recovery AP reachability and STA restoration. The combined candidate was tested
+for continuous reachability after OTA and restart; not every failure scenario
+has been exercised on every supported board.

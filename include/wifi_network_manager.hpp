@@ -12,12 +12,14 @@ class WifiNetworkManager {
  public:
   WifiNetworkManager() = delete;
 
-  static void begin(ConfigManager* configManager);
+  static bool begin(ConfigManager* configManager);
 
   static uint32_t getLastConnect();
   static int getReconnectCount();
   static wifi_mode_t getMode();
   static bool isStaConnected();
+  static bool isRecoveryAccessPointReady();
+  static bool ensureRecoveryAccessPoint();
   static std::string_view getIpAddress();
   static void setStaIpAssignedCallback(
       void (*callback)(const std::string& ipAddress));
@@ -38,6 +40,8 @@ class WifiNetworkManager {
   static int32_t channel();
   static const char* getHostname();
   static std::string_view macAddress();
+  static const char* powerSaveMode();
+  static const char* scanMethod();
   static void setStatusLedPin(int pin);
 
   static void handle_event(void* arg, esp_event_base_t event_base,
