@@ -553,8 +553,6 @@ void fetchStatus(const ebus::JsonChunkVisitor& visitor) {
 
 extern "C" void app_main(void) {
   bool runtimeHealthy = true;
-  DebugSer.begin(115200);
-  DebugSer.setDebugOutput(true);
 
   logger.info("Starting esp-ebus adapter version " AUTO_VERSION);
 
@@ -585,6 +583,11 @@ extern "C" void app_main(void) {
 
   check_reset();
 
+  // GPIO21 is eBUS RX on ESP32-C3 but also the ROM UART0 TX pin. The
+  // bootloader may leave it configured as an output; release it before the
+  // eBUS UART attaches its RX input through the GPIO matrix.
+  gpio_reset_pin(static_cast<gpio_num_t>(UART_RX));
+
   reset_code = (uint32_t)esp_rom_get_reset_reason(0);
 
   calcUniqueId();
@@ -597,7 +600,10 @@ extern "C" void app_main(void) {
   }
 
 #if !defined(EBUS_INTERNAL)
-  Bus.begin();
+  if (!Bus.begin()) {
+    logger.error("Failed to start bridge UART runtime");
+    runtimeHealthy = false;
+  }
 #endif
 
   disableTX();

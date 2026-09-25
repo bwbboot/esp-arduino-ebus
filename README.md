@@ -158,6 +158,28 @@ value from being mistaken for a successful DHCP assignment. Configured devices
 start in station-only mode; after repeated connection failures they enable the
 recovery access point without taking down the station interface again.
 
+## Bridge UART timing
+
+The ESP32-C3 bridge receives bytes in a dedicated task that blocks on the
+hardware UART. Network scheduling therefore does not set the arbitration
+clock. SYN start time comes from the four measured falling edges of its
+2400-baud waveform. Missing edges, buffered traffic, a busy transmitter or a
+missed deadline cause the adapter to wait for a subsequent arbitration round.
+Both arbitration rounds use the same checks. Address bytes go directly to the
+UART FIFO inside a checked transmit window; no software TX queue or legacy
+SoftwareSerial delay compensation is involved.
+
+The console uses USB Serial/JTAG because GPIO21 is the eBUS RX pin on this
+hardware and must not also be driven by the UART0 console. Existing generated
+`sdkconfig.*` files can override `sdkconfig.defaults`: check the effective
+configuration for the USB console and 4 MB flash size when reusing a build.
+
+Host regression tests cover SYN edge recognition, timer rollover, delayed
+processing, transmit deadlines and both arbitration rounds. These tests do
+not replace electrical timing measurements or representative active reads on
+the actual adapter. Confirm those before treating a new bridge image as
+validated for deployment.
+
 ## Assisted PWM calibration
 
 Assisted calibration is available in network-bridge firmware builds. The PWM
