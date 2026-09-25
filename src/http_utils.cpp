@@ -1,4 +1,5 @@
 #include "http_utils.hpp"
+#include "web_admin_policy.hpp"
 
 #include <esp_err.h>
 #include <mbedtls/base64.h>
@@ -22,14 +23,6 @@ ebus::detail::JsonReader streaming_reader(streaming_buffer,
                                           sizeof(streaming_buffer));
 std::mutex streaming_mutex;
 
-bool constantTimeEqual(std::string_view left, std::string_view right) {
-  if (left.size() != right.size()) return false;
-  unsigned char difference = 0;
-  for (size_t i = 0; i < left.size(); ++i) {
-    difference |= static_cast<unsigned char>(left[i] ^ right[i]);
-  }
-  return difference == 0;
-}
 
 bool hasValidOrigin(httpd_req_t* req) {
   const size_t origin_length = httpd_req_get_hdr_value_len(req, "Origin");
@@ -49,7 +42,7 @@ bool hasValidOrigin(httpd_req_t* req) {
   }
   origin.resize(origin_length);
   host.resize(host_length);
-  return origin == "http://" + host;
+  return web_admin::sameOrigin(origin, host);
 }
 
 void sendBasicAuthChallenge(httpd_req_t* req) {
@@ -186,7 +179,7 @@ bool requireBasicAuth(httpd_req_t* req, std::string_view username,
   expected.resize(encodedLength);
   expected.insert(0, "Basic ");
 
-  if (!constantTimeEqual(authorization, expected)) {
+  if (!web_admin::constantTimeEqual(authorization, expected)) {
     sendBasicAuthChallenge(req);
     return false;
   }
