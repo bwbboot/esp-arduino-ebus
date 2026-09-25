@@ -120,6 +120,9 @@ bool WifiNetworkManager::begin(ConfigManager* configManager) {
   std::string apPassword = configManager_ != nullptr
                                ? std::string(configManager_->readString("apModePassword", default_ap_password))
                                : std::string(default_ap_password);
+  if (apPassword.size() < 8 || apPassword.size() > 63) {
+    apPassword = default_ap_password;
+  }
   const std::string configuredThingName =
       configManager_ != nullptr ? std::string(configManager_->readString(
                                       "thingName", default_hostname))
