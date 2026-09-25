@@ -109,3 +109,13 @@ restart must return202 and recover; masked secrets must survive a config save;
 a cross-origin mutation must be rejected. Live combined-firmware checks verified
 unauthenticated restart/upload rejection and an authenticated OTA/restart, not
 every possible browser or endpoint combination.
+## Passive PWM candidate selection (library groundwork)
+
+The host-testable selector scans odd values1 through255, requires at least three
+adjacent stable candidates and selects a tested midpoint in the widest stable
+band. Ties prefer the band closer to the original setting. A failed sweep retains
+the original value. This helper does not change PWM at runtime or add calibration
+buttons; the authenticated, explicitly started workflow is a separate follow-up.
+Receiver stability is a heuristic, not CRC or application-level read validation.
+
+Run `c++ -std=c++17 -Wall -Wextra -Werror -Iinclude test_host/pwm_calibration_tests.cpp -o /tmp/pwm_calibration_tests && /tmp/pwm_calibration_tests`.
