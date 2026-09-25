@@ -119,3 +119,16 @@ buttons; the authenticated, explicitly started workflow is a separate follow-up.
 Receiver stability is a heuristic, not CRC or application-level read validation.
 
 Run `c++ -std=c++17 -Wall -Wextra -Werror -Iinclude test_host/pwm_calibration_tests.cpp -o /tmp/pwm_calibration_tests && /tmp/pwm_calibration_tests`.
+
+
+## Assisted PWM calibration
+
+Assisted calibration is available in network-bridge firmware builds. The PWM
+value controls the receiver threshold used to distinguish eBUS signal levels.
+The suitable value can depend on adapter hardware, bus topology, cable length,
+connected devices and electrical conditions.
+
+Calibration is always started explicitly by an operator. It never adjusts PWM
+continuously during normal operation.
+
+#

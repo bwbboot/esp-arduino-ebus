@@ -36,6 +36,27 @@
             </div>
         </fieldset>
 
+        <fieldset class="bridge-only">
+            <legend>PWM Calibration</legend>
+            <p>Observation and calibration temporarily disconnect writable eBUS clients.</p>
+            <form action="/api/v1/pwm-calibration/observe" method="post" class="inline-form"
+                onsubmit="return confirmAction('start a passive 30-second observation');">
+                <button id="pwmObserve" type="submit" class="link-button">Observe current PWM</button>
+            </form>
+            <form action="/api/v1/pwm-calibration/start" method="post" class="inline-form"
+                onsubmit="return confirmAction('start a passive PWM sweep');">
+                <button id="pwmStart" type="submit" class="link-button">Start passive calibration</button>
+            </form>
+            <form action="/api/v1/pwm-calibration/accept" method="post" class="inline-form">
+                <button id="pwmAccept" type="submit" class="link-button">Accept validated candidate</button>
+            </form>
+            <form action="/api/v1/pwm-calibration/rollback" method="post" class="inline-form"
+                onsubmit="return confirmAction('restore the original PWM');">
+                <button id="pwmRollback" type="submit" class="link-button secondary">Restore original PWM</button>
+            </form>
+            <div class="info-box">Progress and measurements are available on the Status page.</div>
+        </fieldset>
+
         <div style='font-size:.6em;margin-top:20px;'>
             Project: <a href='https://github.com/danielkucera/esp-arduino-ebus' target='_blank'>esp-arduino-ebus on
                 GitHub</a>
@@ -48,23 +69,47 @@
         }
 
         function checkEndpoint() {
-            const url = '/api/v1/commands';
-
-            fetch(url, { method: 'GET' }).then(response => {
-                if (!response.ok) { disableLinks(); } else { enableLinks(); }
+            fetch('/api/v1/status', { method: 'GET' }).then(response => {
+                if (!response.ok) throw new Error('Status unavailable');
+                return response.json();
+            }).then(status => {
+                const firmware = status.firmware || {};
+                if (firmware.mode === 'internal') {
+                    enableInternalLinks();
+                } else {
+                    disableInternalLinks(Boolean(firmware.pwm_calibration_supported));
+                    updateCalibrationActions(status.pwm_calibration || {});
+                }
             }).catch(() => {
-                disableLinks();
+                disableInternalLinks(false);
             });
         }
 
-        function disableLinks() {
+        function disableInternalLinks(showCalibration) {
             const links = document.querySelectorAll('.internal');
             links.forEach(link => { link.classList.add('disabled'); link.style.pointerEvents = 'none'; });
+            document.querySelectorAll('.bridge-only').forEach(element => {
+                element.style.display = showCalibration ? '' : 'none';
+            });
         }
 
-        function enableLinks() {
+        function enableInternalLinks() {
             const links = document.querySelectorAll('.internal');
             links.forEach(link => { link.classList.remove('disabled'); link.style.pointerEvents = 'auto'; });
+            document.querySelectorAll('.bridge-only').forEach(element => { element.style.display = 'none'; });
+        }
+
+        function updateCalibrationActions(calibration) {
+            const state = calibration.state || 'unavailable';
+            const busyStates = ['preparing_observation', 'observation_settling', 'observing',
+                'preparing_sweep', 'settling', 'measuring', 'confirmation_settling',
+                'confirmation_measuring', 'awaiting_validation'];
+            const busy = busyStates.includes(state);
+            document.getElementById('pwmObserve').disabled = busy;
+            document.getElementById('pwmStart').disabled = busy;
+            document.getElementById('pwmAccept').disabled = state !== 'awaiting_validation';
+            const canRetryPersistence = state === 'failed' && Boolean(calibration.persistence_error);
+            document.getElementById('pwmRollback').disabled = !busy && state !== 'observed' && !canRetryPersistence;
         }
 
         // Call checkEndpoint on page load

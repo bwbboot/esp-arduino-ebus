@@ -21,6 +21,7 @@
 
 #include "app_limits.hpp"
 #include "logger.hpp"
+#include "pwm_calibration.hpp"
 
 #if defined(EBUS_INTERNAL)
 #include "command_manager.hpp"
@@ -110,6 +111,16 @@ struct FirmwareStatus {
   void toJson(ebus::detail::JsonWriter& writer) const {
     auto scope = writer.objectScope();
     writer.writeField("version", AUTO_VERSION);
+#if defined(EBUS_INTERNAL)
+    writer.writeField("mode", "internal");
+#else
+    writer.writeField("mode", "bridge");
+#endif
+#if !defined(EBUS_INTERNAL) && defined(PWM_PIN)
+    writer.writeField("pwm_calibration_supported", true);
+#else
+    writer.writeField("pwm_calibration_supported", false);
+#endif
     writer.writeField("esp_idf_version", esp_get_idf_version());
 #if !defined(EBUS_INTERNAL)
     writer.writeField("async", static_cast<bool>(USE_ASYNCHRONOUS));
@@ -335,7 +346,7 @@ void prepareRuntimeForUpgrade() {
 
 }  // namespace
 
-inline void disableTX() {
+void disableTX() {
 #if defined(TX_DISABLE_PIN)
   gpio_config_t config{};
   config.pin_bit_mask = 1ULL << TX_DISABLE_PIN;
@@ -348,21 +359,24 @@ inline void disableTX() {
 #endif
 }
 
-inline void enableTX() {
+void enableTX() {
 #if defined(TX_DISABLE_PIN)
   gpio_set_level(static_cast<gpio_num_t>(TX_DISABLE_PIN), 0);
 #endif
 }
 
-void set_pwm() {
+void set_pwm(uint8_t value) {
 #if defined(PWM_PIN)
-  int value = configManager.readInt("pwmValue", 130);
   ledc_set_duty(pwm_speed_mode, pwm_channel, value);
   ledc_update_duty(pwm_speed_mode, pwm_channel);
 #if defined(EBUS_INTERNAL)
   getEbusController().resetMetrics();
 #endif
 #endif
+}
+
+void set_pwm() {
+  set_pwm(static_cast<uint8_t>(configManager.readInt("pwmValue", 130)));
 }
 
 uint32_t get_pwm() {
@@ -503,6 +517,9 @@ void fetchStatus(const ebus::JsonChunkVisitor& visitor) {
 
 #if !defined(EBUS_INTERNAL)
   writer.writeField("arbitration", ArbitrationInfo{});
+#if defined(PWM_PIN)
+  writer.writeField("pwm_calibration", pwmCalibrationManager);
+#endif
 #endif
   writer.writeField("firmware", FirmwareStatus{});
   writer.writeField("chip", ChipStatus{});
@@ -844,6 +861,12 @@ extern "C" void app_main(void) {
 #else
   if (!startClientRuntime()) {
     logger.error("Failed to start client runtime");
+  } else {
+#if defined(PWM_PIN)
+    if (!pwmCalibrationManager.begin()) {
+      logger.error("Failed to start PWM calibration runtime");
+    }
+#endif
   }
 #endif
   vTaskDelete(nullptr);

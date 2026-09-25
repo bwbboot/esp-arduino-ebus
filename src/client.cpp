@@ -7,6 +7,7 @@
 #include <lwip/tcp.h>
 
 #include <cerrno>
+#include <atomic>
 #include <cstring>
 
 #include "app_limits.hpp"
@@ -34,6 +35,11 @@ int wifiClientsReadOnly[MAX_WIFI_CLIENTS] = {-1, -1, -1, -1};
 constexpr uint16_t port_default = 3333;
 constexpr uint16_t port_enhanced = 3335;
 constexpr uint16_t port_read_only = 3334;
+
+std::atomic<bool> writable_client_isolation_requested{false};
+std::atomic<bool> writable_client_isolation_acknowledged{false};
+
+void closeSocket(int& clientFd);
 
 bool createListenSocket(int& listenFd, uint16_t port) {
   if (listenFd >= 0) return true;
@@ -76,30 +82,41 @@ bool createListenSockets() {
 
 void clientAcceptTask(void* arg) {
   for (;;) {
-    handleNewClient(wifiServerFd, wifiClients);
-    handleNewClient(wifiServerEnhancedFd, wifiClientsEnhanced);
+    if (writable_client_isolation_requested.load()) {
+      int rejected_clients[MAX_WIFI_CLIENTS] = {-1, -1, -1, -1};
+      handleNewClient(wifiServerFd, rejected_clients);
+      handleNewClient(wifiServerEnhancedFd, rejected_clients);
+      for (int& client : rejected_clients) closeSocket(client);
+    } else {
+      handleNewClient(wifiServerFd, wifiClients);
+      handleNewClient(wifiServerEnhancedFd, wifiClientsEnhanced);
+    }
     handleNewClient(wifiServerReadOnlyFd, wifiClientsReadOnly);
     vTaskDelay(1);
   }
 }
 
-void dataProcess() {
-  for (int i = 0; i < MAX_WIFI_CLIENTS; i++) {
-    handleClient(&wifiClients[i]);
-    handleClientEnhanced(&wifiClientsEnhanced[i]);
+void dataProcess(bool writable_clients_enabled) {
+  if (writable_clients_enabled) {
+    for (int i = 0; i < MAX_WIFI_CLIENTS; i++) {
+      handleClient(&wifiClients[i]);
+      handleClientEnhanced(&wifiClientsEnhanced[i]);
+    }
   }
 
   BusType::data data;
   if (Bus.read(data)) {
     for (int i = 0; i < MAX_WIFI_CLIENTS; i++) {
       if (data.enhanced) {
-        if (data.client_fd == wifiClientsEnhanced[i]) {
+        if (writable_clients_enabled &&
+            data.client_fd == wifiClientsEnhanced[i]) {
           pushClientEnhanced(&wifiClientsEnhanced[i], data.c, data.d, true);
         }
       } else {
-        pushClient(&wifiClients[i], data.d);
+        if (writable_clients_enabled) pushClient(&wifiClients[i], data.d);
         pushClient(&wifiClientsReadOnly[i], data.d);
-        if (data.client_fd != wifiClientsEnhanced[i]) {
+        if (writable_clients_enabled &&
+            data.client_fd != wifiClientsEnhanced[i]) {
           pushClientEnhanced(&wifiClientsEnhanced[i], data.c, data.d,
                              data.log_to_client_fd == wifiClientsEnhanced[i]);
         }
@@ -111,7 +128,20 @@ void dataProcess() {
 void dataLoop(void* arg) {
   (void)arg;
   for (;;) {
-    dataProcess();
+    const bool isolation_requested =
+        writable_client_isolation_requested.load();
+    if (isolation_requested &&
+        !writable_client_isolation_acknowledged.load()) {
+      for (int i = 0; i < MAX_WIFI_CLIENTS; ++i) {
+        closeSocket(wifiClients[i]);
+        closeSocket(wifiClientsEnhanced[i]);
+      }
+      arbitrationDone();
+      writable_client_isolation_acknowledged.store(true);
+    }
+    dataProcess(!isolation_requested);
+    // Always yield, including when writable traffic is enabled.
+    vTaskDelay(1);
   }
 }
 
@@ -201,6 +231,21 @@ void stopClientRuntime() {
     vTaskDelete(dataTaskHandle);
     dataTaskHandle = nullptr;
   }
+}
+
+void requestWritableClientIsolation() {
+  writable_client_isolation_acknowledged.store(false);
+  writable_client_isolation_requested.store(true);
+}
+
+bool writableClientIsolationReady() {
+  return writable_client_isolation_requested.load() &&
+         writable_client_isolation_acknowledged.load();
+}
+
+void releaseWritableClientIsolation() {
+  writable_client_isolation_requested.store(false);
+  writable_client_isolation_acknowledged.store(false);
 }
 
 bool handleNewClient(int serverFd, int clients[]) {
