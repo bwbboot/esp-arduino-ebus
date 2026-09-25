@@ -85,7 +85,7 @@ This mode enables **standalone operation** without requiring external software s
 
 ## Passive PWM candidate selection (library groundwork)
 
-The host-testable selector scans odd values1 through255, requires at least three
+The host-testable selector scans odd values 1 through 255, requires at least three
 adjacent stable candidates and selects a tested midpoint in the widest stable
 band. Ties prefer the band closer to the original setting. A failed sweep retains
 the original value. This helper does not change PWM at runtime or add calibration
