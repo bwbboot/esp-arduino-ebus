@@ -114,6 +114,8 @@ void dataLoop(void* arg) {
   (void)arg;
   for (;;) {
     dataProcess();
+    // Nonblocking socket I/O must still yield to the idle-task watchdog.
+    vTaskDelay(1);
   }
 }
 
